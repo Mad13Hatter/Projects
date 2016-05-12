@@ -1,0 +1,191 @@
+/*
+* MTE325: Lab 1
+* June 10, 2015
+* Ahmed Syed         20484061
+* Muhammad Hossain   20494234
+*/
+
+
+#include "lab1_phase1.h"
+
+// declare global variable of LED state, initially all LEDs should be off
+alt_u8 led_state = (alt_u8) 0x00;
+
+//Flags to keep track of push button presses
+volatile alt_u8 button_1_pressed = (alt_u8)0x00;
+volatile alt_u8 button_2_pressed = (alt_u8)0x00;
+
+//Variables to hold the state of switches. Separate variables are used for button_1 and button_2
+//to track the states individually.
+volatile alt_u8 switch_state_1;
+volatile alt_u8 switch_state_2;
+
+//Counters for the two different displays.
+volatile alt_u8 counter_1 = (alt_u8)0x00;
+volatile alt_u8 counter_2 = (alt_u8)0x00;
+
+#ifdef BUTTON_PIO_BASE
+#ifdef LED_PIO_BASE
+static void button_ISR(void* context, alt_u32 id) {
+	alt_u8 button_1;
+	alt_u8 button_2;
+	alt_u8 registerValue;
+
+	 //Get the value from the register
+	registerValue = IORD(BUTTON_PIO_BASE, 3) & 0xf;
+
+	//Get the values for the two buttons individually
+	button_1 = registerValue & 0x1;
+	button_2 = registerValue & 0x2;
+
+	//In the case of button one being pressed
+	if(button_1 > 0)
+	{
+		//Capture the state of the switches
+		switch_state_1 = IORD(SWITCH_PIO_BASE, 0);
+
+		//Set the flag for button 1
+		button_1_pressed = (alt_u8)0x01;
+	}
+
+	if(button_2 > 0)
+	{
+		switch_state_2 = IORD(SWITCH_PIO_BASE, 0);
+		button_2_pressed = (alt_u8)0x01;
+	}
+	
+	//Clear the interrupt
+	IOWR(BUTTON_PIO_BASE, 3, 0x0);
+}
+#endif
+#endif
+
+#ifdef TIMER_0_BASE  // only compile this code if there is a sys_clk_timer
+static void TIMER_ISR(void* context, alt_u32 id)
+{
+	alt_u8 switch_value_1 = 0x00;
+	alt_u8 switch_value_2 = 0x00;
+	alt_u8 counter_shift_1;
+	alt_u8 counter_shift_2;
+
+   // Acknowledge the interrupt by clearing the TO bit in the status register
+   IOWR(TIMER_0_BASE, 0, 0x0);
+
+
+   //If the first button was pressed since the last time the clock fired
+   if(button_1_pressed > 0)
+   {
+	   //Reset the flag
+	   button_1_pressed = 0x00;
+
+	   //Initialize the counter for the first button
+	   counter_1 = 0x08;
+   }
+
+    //If the first button was pressed since the time the clock fired
+   if(button_2_pressed > 0)
+   {
+	   //Reset the flag
+	   button_2_pressed = 0x00;
+
+	   //Initialize the second counter
+	   counter_2 = 0x08;
+   }
+
+   //If the counter is greater than 0, it signifies that the values of all the switches have not yet been displayed by the LEDs
+   if(counter_1 > 0)
+   {
+	   //Determine the shift required to bring the value of the "nth" switch in the least significant bit
+	   counter_shift_1 = 0x08 - counter_1;
+
+	   //Get the value of the switch by shifting the switch value and masking all but the right-most bit
+	   switch_value_1 = (switch_state_1 >> counter_shift_1) & 0x01;
+
+	   //Write the value of the switch to the LED
+	   IOWR(LED_PIO_BASE, 0, switch_value_1);
+
+	   //Decrement the counter
+	   counter_1--;
+   }
+   else
+   {
+	   //Turn off all the LEDs
+	   IOWR(LED_PIO_BASE, 0, 0x00);
+   }
+
+   if(counter_2 > 0)
+   {
+	   //Determine the shift requred
+	   counter_shift_2 = 0x08 - counter_2;
+
+	   //Get value of the switch
+	   switch_value_2 = (switch_state_2 >> counter_shift_2) & 0x01;
+
+	   
+	   if(switch_value_2 > 0)
+	   {
+		   //Write a 1 to indicate that the switch is on
+		   IOWR_ALTERA_AVALON_PIO_DATA(SEVEN_SEG_PIO_BASE, 0xCF);
+	   }
+	   else
+	   {
+		   //Write a 0 to indicate the switch is off
+		   IOWR_ALTERA_AVALON_PIO_DATA(SEVEN_SEG_PIO_BASE, 0x00);
+	   }
+
+	   counter_2--;
+   }
+   else
+   {
+	   //Once it's finished write an 'F' to the display
+	   IOWR_ALTERA_AVALON_PIO_DATA(SEVEN_SEG_PIO_BASE, 0xB8);
+   }
+}
+#endif
+
+int main(void) {
+
+#ifdef BUTTON_PIO_BASE
+	//Interrupts enabled for two buttons
+	IOWR(BUTTON_PIO_BASE, 2, 0x3);
+
+	// Reset the edge capture register by writing to it (any value will do)
+	IOWR(BUTTON_PIO_BASE, 3, 0x0);
+
+	//Set up the interrupt vector
+	alt_irq_register(BUTTON_PIO_IRQ, (void*) 0, button_ISR);
+#endif
+
+#ifdef LED_PIO_BASE
+	/* initially turn off all LEDs */
+	IOWR(LED_PIO_BASE, 0, led_state);
+#endif
+
+	alt_u32 timerPeriod;  // 32 bit period used for timer
+
+#ifdef TIMER_0_BASE
+
+   // Calculate timer period for 1 second
+   timerPeriod = TIMER_0_FREQ - 1;
+
+   // Initialize timer interrupt vector
+   alt_irq_register(TIMER_0_IRQ, (void*)0, TIMER_ISR);
+
+   // Initialize timer period
+   IOWR(TIMER_0_BASE, 2, (alt_u16)timerPeriod);
+   IOWR(TIMER_0_BASE, 3, (alt_u16)(timerPeriod >> 16));
+
+   // Clear timer interrupt bit in status register
+   IOWR(TIMER_0_BASE, 0, 0x0);
+
+   // Initialize timer control - start timer, run continuously, enable interrupts
+   IOWR(TIMER_0_BASE, 1, 0x7);
+#endif
+
+	while (1)
+	{
+	}
+
+	return (0);
+}
+

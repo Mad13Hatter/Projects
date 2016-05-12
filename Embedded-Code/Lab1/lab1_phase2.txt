@@ -1,0 +1,164 @@
+/*
+* MTE325: Lab 1
+* June 10, 2015
+* Ahmed Syed         20484061
+* Muhammad Hossain   20494234
+*/
+
+#include "lab1_phase2.h"
+
+//Comment out the following to use interrupts.
+#define USE_POLLING
+
+volatile int pulseCount;
+
+#ifndef USE_POLLING
+#ifdef PIO_PULSE_BASE
+#ifdef PIO_RESPONSE_BASE
+static void PULSE_ISR(void* context, alt_u32 id)
+{
+	alt_u8 edge;
+
+	//Read the value of the pulse from the register
+	edge = IORD(PIO_PULSE_BASE, 0);
+
+
+	//If it is greater than 0, it indicates a rising edge
+	if(edge > 0)
+	{
+		//Write the response
+		IOWR(PIO_RESPONSE_BASE, 0, 1);
+	}
+	//Falling edge
+	else
+	{
+		//Write the response
+		IOWR(PIO_RESPONSE_BASE, 0, 0);
+
+		//Increment the number of pulses detected
+		pulseCount++;
+	}
+
+	//Clear the interrupt
+	IOWR(PIO_PULSE_BASE, 3, 0x0);
+}
+#endif
+#endif
+#endif
+
+int main(void) {
+	alt_u8 pulseState = 0;
+	alt_u8 pulseValue = 0;
+
+	int loopCount;
+	int period;
+	int dutycycle;
+	int granularity;
+
+#ifndef USE_POLLING
+#ifdef PIO_PULSE_BASE
+#ifdef LED_PIO_BASE
+
+	//Enable the interrupt
+	IOWR(PIO_PULSE_BASE, 2, 0x01);
+
+	// Reset the edge capture register
+	IOWR(PIO_PULSE_BASE, 3, 0x0);
+
+	//Set the ISR function to be called in the event of an interrupt
+	alt_irq_register(PIO_PULSE_IRQ, (void*)0, PULSE_ISR);
+#endif
+#endif
+#endif
+
+#ifdef USE_POLLING
+#ifdef PIO_PULSE_BASE
+#ifdef PIO_RESPONSE_BASE
+	for (period = 14; period > 0; period = period - 2) {
+		for (dutycycle = 12; dutycycle > 0; dutycycle = dutycycle - 2) {
+			for (granularity = 1; granularity < 5; granularity++) {
+				for (loopCount = 0; loopCount < 3; loopCount++) {
+					
+					//Initialize the EGM.
+					init(period, dutycycle);
+					
+					printf("%d,", granularity);
+
+					//Reset the pulse count and the default pulse state/value.
+					pulseState = 0;
+					pulseValue = 0;
+					pulseCount = 0;
+
+					while(pulseCount < 101)
+					{
+						if(pulseState == 0)
+						{
+							//Read the current value of the pulse
+							pulseValue = IORD(PIO_PULSE_BASE, 0);
+
+							//Check if the pulse value changed
+							if(pulseValue == 1)
+							{
+								//Write the response
+								IOWR(PIO_RESPONSE_BASE, 0, 1);
+								
+								//Update the pulse state
+								pulseState = pulseValue;
+							}
+
+						}
+						else if(pulseState == 1)
+						{
+							pulseValue = IORD(PIO_PULSE_BASE, 0);
+
+							if(pulseValue == 0)
+							{
+								//Write the response
+								IOWR(PIO_RESPONSE_BASE,0,0);
+								
+								//Update the pulse state
+								pulseState = pulseValue;
+
+								//Increment the number of pulses detected
+								pulseCount++;
+							}
+						}
+						//Perform the background tasks
+						background(granularity);
+					}
+					finalize();
+				}
+			}
+		}
+	}
+#endif
+#endif
+#endif
+
+#ifndef USE_POLLING
+	for (period = 14; period > 0; period = period - 2) {
+		for (dutycycle = 12; dutycycle > 0; dutycycle = dutycycle - 2) {
+			for (granularity = 1; granularity < 5; granularity++) {
+				for (loopCount = 0; loopCount < 3; loopCount++) {
+
+					//Reset the pulse count.
+					pulseCount = 0;
+
+					//Initialize the EGM
+					init(period, dutycycle);
+
+					printf("%d,", granularity);
+
+					while (pulseCount < 101) {
+						background(granularity);
+					}
+					finalize();
+				}
+			}
+		}
+	}
+#endif
+
+	return (0);
+}
+
