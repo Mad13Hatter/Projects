@@ -1,0 +1,124 @@
+#include "system.h"
+#include <stdio.h>
+#include <io.h>
+#include <LCD.H>
+#include <SD_Card.h>
+#include <fat.h>
+#include <Open_I2C.h>
+#include <math.h>
+#include <string.h>
+#include <wm8731.h>
+#include "alt_types.h"  
+#include <unistd.h>
+#include "sys/alt_irq.h"  
+
+//GLOBAL VARIABLES
+BYTE buffer[512] = {0}; 
+UINT16 file_number;
+UINT16 file_count;
+volatile int button1_edge = 0x0;
+volatile int button2_edge = 0x0;
+volatile int button3_edge = 0x0;
+volatile int button4_edge = 0x0;
+
+volatile int PlayWAV = 0;
+
+
+/***************  BUTTON ISR **************/
+static void button0_ISR(void* context, alt_u32 id)
+{
+    volatile int* button0_edge_cap = (volatile int*)context; 
+    *button0_edge_capture = IORD(PIO_PB0_BASE, 3); // Retreive edge capture 
+    IOWR(PIO_PB0_BASE, 3, 0x7); // Reset edge capture 
+    PlayWAV = 0;
+    printf("STOP\n");      
+}
+
+//PLAY ISR
+static void button1_ISR(void* context, alt_u32 id)
+{
+    volatile int* button1_edge_capture = (volatile int*)context; 
+    *button1_edge_capture = IORD(PIO_PB1_BASE, 3); // Retreive edge capture data
+    IOWR(PIO_PB1_BASE, 3, 0x7); // Reset edge capture data
+    PlayWAV = 1;
+    printf("PLAY\n");      
+}
+
+//NEXT ISR
+static void button2_ISR(void* context, alt_u32 id)
+{    
+}
+
+//PREV ISR 
+static void button3_ISR(void* context, alt_u32 id)
+{    
+}
+
+/*********** MAIN PROGRAM **********/
+int main (void)
+{
+    int c[1024];
+    BYTE buffer[1024];        
+    UINT32 length;
+    int sector = 0;
+    UINT16 tmp; //Create a 16-bit variable to pass to the FIFO
+    data_file df;    
+    int i;
+    
+	/********************  SET ISRS  ******************************/
+	#ifdef PIO_PB0_BASE //Push Button 0
+	    alt_irq_register( PIO_PB0_IRQ, (void*)0, button0_ISR );//register interrupt vector  
+	    IOWR(PIO_PB0_BASE, 3, 0x0);//reset edge capture register, any value works  
+	    IOWR(PIO_PB0_BASE, 2, 0xf);//enable interrupts
+	#endif
+
+	#ifdef PIO_PB1_BASE //Push Button 1
+	    alt_irq_register( PIO_PB1_IRQ, (void*)0, button1_ISR ); 
+	    IOWR(PIO_PB1_BASE, 3, 0x0);
+	    IOWR(PIO_PB1_BASE, 2, 0xf);
+	#endif
+
+	#ifdef PIO_PB2_BASE //Push Button 2
+	    alt_irq_register( PIO_PB2_IRQ, (void*)0, button2_ISR );  
+	    IOWR(PIO_PB2_BASE, 3, 0x0);  
+	    IOWR(PIO_PB2_BASE, 2, 0xf);
+	#endif
+
+	#ifdef PIO_PB3_BASE //Push Button 3
+	    alt_irq_register( PIO_PB3_IRQ, (void*)0, button3_ISR );
+	    IOWR(PIO_PB3_BASE, 3, 0x0); 
+	    IOWR(PIO_PB3_BASE, 2, 0xf);
+	#endif    
+
+	/******************** INITIALIZATIONS **************/
+    SD_card_init(); // initialize the sdCard
+    init_mbr(); // initialize the master boot record
+    init_bs(); // initialize the boot sector for accessing the FAT file system
+    info_bs(); // // prints info regarding the boot sector
+    init_audio_codec(); // initialize the audio codec
+
+    search_for_filetype("WAV", &df, 0, 1); // 0 is searching for the root folder,
+    // and 1 start searching inside the root folder
+    length = 1 + ceil(df.FileSize/(BPB_SecPerClus*BPB_BytsPerSec));
+    build_cluster_chain(c,length,&df);
+    
+    printf("Playing :%d", df.Name );
+    
+    while ( get_rel_sector(&df,buffer,c,sector) == 0){
+    // LOOK AT LAB MANUAL PAGE 55
+        for ( i = 0; i < BPB_BytsPerSec; i+=2){
+        
+            if( !IORD( AUD_FULL_BASE, 0 ) ) //Check if the FIFO is not full
+            {
+            tmp = ( buffer[ i + 1 ] << 8 ) | ( buffer[ i ] ); //Package 2 8-bit bytes from the
+            //sector buffer array into the
+            //single 16-bit variable tmp
+            IOWR( AUDIO_0_BASE, 0, tmp ); //Write the 16-bit variable tmp to the FIFO where it
+            //will be processed by the audio CODEC
+            }    
+            sector++;
+        }
+    }
+    
+    return  0;
+}
