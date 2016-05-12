@@ -1,0 +1,14 @@
+﻿"Symbol";"Value";"Unit";
+"REFERENCE";"30206-A";"";
+"TraceParts.PartVersion";"1.4.1";"";
+"SUPPLIER";"Schaeffler Technologies AG & Co. KG";"";
+"TraceParts.PartStatus";"Published";"";
+"TraceParts.PartNumber";"69-18092006-865473";"";
+"TraceParts.PartLanguage";"en";"";
+"DESIGN";"Tapered roller bearings";"";
+"TraceParts.InstanceId";"69-18092006-8654732VVZ9JYZCYOIU7T699WESIXAD";"";
+"TraceParts.PartTitle";"Tapered roller bearings 302, main dimensions to DIN ISO 355 / DIN 720, separable, adjusted or in pairs";"";
+"TRACEPARTS";"TRACEPARTS";"";
+"TraceParts.PartStatusId";"";"";
+"SELECTION";"30206-A";"";
+"TraceParts.ClassPath";"INAFAG:/F_INAFAG/69-18092006-865473";"";
